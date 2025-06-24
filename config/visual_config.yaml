@@ -1,0 +1,19 @@
+# Visualization Configuration
+
+# Bounding box settings
+box_thickness: 2
+box_color: null  # null means auto-color by class
+
+# Text settings
+text_thickness: 2
+text_color: [255, 255, 255]
+text_bg_color: [0, 0, 0]
+text_font_scale: 0.5
+
+# Display settings
+hide_labels: false
+hide_conf: false
+show_fps: true
+
+class_colors:
+  0: [0, 255, 255]
