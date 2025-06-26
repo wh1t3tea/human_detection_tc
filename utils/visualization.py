@@ -1,8 +1,3 @@
-#!/usr/bin/env python3
-"""
-Visualization utilities for object detection.
-"""
-
 import logging
 from typing import Dict, List, Tuple, Optional, Any, Union
 
@@ -10,7 +5,6 @@ import cv2
 import numpy as np
 
 
-# Configure module logger
 logger = logging.getLogger(__name__)
 
 
@@ -67,12 +61,10 @@ def draw_text(
     Returns:
         Image with text
     """
-    # Calculate text size
     (text_width, text_height), baseline = cv2.getTextSize(
         text, font, font_scale, thickness
     )
 
-    # Draw background if requested
     if background is not None:
         x, y = position
         cv2.rectangle(
@@ -84,7 +76,6 @@ def draw_text(
             line_type
         )
 
-    # Draw text
     cv2.putText(
         image,
         text,
@@ -108,21 +99,17 @@ def generate_color_palette(num_classes: int = 80) -> Dict[int, Tuple[int, int, i
     Returns:
         Dictionary mapping class IDs to colors
     """
-    # Use HSV color space for better color distribution
-    np.random.seed(42)  # for reproducibility
+    np.random.seed(42)
     colors = {}
 
     for i in range(num_classes):
-        # Generate distinct colors in HSV space
         hue = i / num_classes
         saturation = 0.8 + np.random.uniform(-0.2, 0.2)
         value = 0.8 + np.random.uniform(-0.2, 0.2)
 
-        # Convert to BGR
         hsv = np.array([[[hue * 179, saturation * 255, value * 255]]], dtype=np.uint8)
         bgr = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)[0, 0]
 
-        # Store as (B, G, R) tuple
         colors[i] = (int(bgr[0]), int(bgr[1]), int(bgr[2]))
 
     return colors
@@ -159,33 +146,25 @@ def draw_detections(
     """
     result = image.copy()
 
-    # If no detections, return original image
     if detections.get("count", 0) == 0:
         return result
 
-    # If no color palette provided, generate one
     if class_colors is None:
         num_classes = max(detections["classes"]) + 1 if len(detections["classes"]) > 0 else 80
         class_colors = generate_color_palette(num_classes)
 
-    # Draw each detection
     for i in range(detections["count"]):
-        # Get detection data
         box = detections["boxes"][i]
         score = detections["scores"][i]
         class_id = detections["classes"][i]
         class_name = detections["class_names"][i] if "class_names" in detections else f"Class {class_id}"
 
-        # Get box coordinates as integers
         x1, y1, x2, y2 = [int(coord) for coord in box]
 
-        # Get color for class
-        color = class_colors.get(class_id, (0, 255, 0))  # Default to green
+        color = class_colors.get(class_id, (0, 255, 0))
 
-        # Draw bounding box
         cv2.rectangle(result, (x1, y1), (x2, y2), color, box_thickness)
 
-        # Draw label
         if show_labels or show_scores:
             label_parts = []
 
@@ -195,15 +174,12 @@ def draw_detections(
             if show_scores:
                 label_parts.append(f"{score:.2f}")
 
-            # Combine label parts
             label = " ".join(label_parts)
 
-            # Get label size for positioning
             text_size, baseline = cv2.getTextSize(
                 label, cv2.FONT_HERSHEY_SIMPLEX, text_scale, text_thickness
             )
 
-            # Draw text background
             if text_bg_color is not None:
                 cv2.rectangle(
                     result,
@@ -213,7 +189,6 @@ def draw_detections(
                     -1,
                 )
 
-            # Draw text
             cv2.putText(
                 result,
                 label,
@@ -236,6 +211,7 @@ def draw_fps(
     text_scale: float = 0.7,
     text_thickness: int = 2,
     bg_color: Optional[Tuple[int, int, int]] = None,
+    custom_text: Optional[str] = None,
 ) -> np.ndarray:
     """Draw FPS counter on image.
 
@@ -247,27 +223,24 @@ def draw_fps(
         text_scale: Text font scale
         text_thickness: Text thickness
         bg_color: Background color (None for no background)
+        custom_text: Optional custom text to display instead of "FPS: X.X"
 
     Returns:
         Image with FPS counter
     """
     result = image.copy()
 
-    # Format FPS text
-    fps_text = f"FPS: {fps:.1f}"
+    fps_text = custom_text if custom_text is not None else f"FPS: {fps:.1f}"
 
-    # Get text size
     (text_width, text_height), baseline = cv2.getTextSize(
         fps_text, cv2.FONT_HERSHEY_SIMPLEX, text_scale, text_thickness
     )
 
-    # Draw background
     if bg_color is not None:
         bg_rect_p1 = (position[0] - 5, position[1] - text_height - 5)
         bg_rect_p2 = (position[0] + text_width + 5, position[1] + 5)
         cv2.rectangle(result, bg_rect_p1, bg_rect_p2, bg_color, -1)
 
-    # Draw text
     cv2.putText(
         result,
         fps_text,
@@ -307,32 +280,25 @@ def draw_text_overlay(
     """
     result = image.copy()
 
-    # Split text into lines
     lines = text.split('\n')
 
-    # Get line height
     (_, text_height), baseline = cv2.getTextSize(
         lines[0], cv2.FONT_HERSHEY_SIMPLEX, text_scale, text_thickness
     )
     line_height = text_height + baseline + 5
 
-    # Draw each line
     for i, line in enumerate(lines):
-        # Calculate line position
         line_pos = (position[0], position[1] + i * line_height)
 
-        # Get text size
         (text_width, _), _ = cv2.getTextSize(
             line, cv2.FONT_HERSHEY_SIMPLEX, text_scale, text_thickness
         )
 
-        # Draw background
         if bg_color is not None:
             bg_rect_p1 = (line_pos[0] - 5, line_pos[1] - text_height - 5)
             bg_rect_p2 = (line_pos[0] + text_width + 5, line_pos[1] + 5)
             cv2.rectangle(result, bg_rect_p1, bg_rect_p2, bg_color, -1)
 
-        # Draw text
         cv2.putText(
             result,
             line,

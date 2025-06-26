@@ -1,19 +1,13 @@
-#!/usr/bin/env python3
-"""
-Video processing utilities.
-"""
-
 import os
 import time
 import logging
-from typing import Callable, Dict, Any, Tuple
+from typing import Callable, Dict, Any, Tuple, List, Optional
 
 import cv2
 import numpy as np
 from tqdm import tqdm
 
 
-# Configure module logger
 logger = logging.getLogger(__name__)
 
 
@@ -33,7 +27,6 @@ def get_video_properties(video_path: str) -> Dict[str, Any]:
     if not cap.isOpened():
         raise ValueError(f"Cannot open video file: {video_path}")
 
-    # Get properties
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS)
@@ -68,7 +61,7 @@ def process_video(
         show_preview: Whether to show preview window
         frame_step: Process every Nth frame
         preview_scale: Scale factor for preview window
-        codec: FourCC codec code
+        codec: FourCC codec code (default: "mp4v", alternatives: "avc1", "XVID")
 
     Returns:
         Dictionary with processing statistics
@@ -76,32 +69,42 @@ def process_video(
     if not os.path.exists(video_path):
         raise FileNotFoundError(f"Video file not found: {video_path}")
 
-    # Create output directory if needed
     output_dir = os.path.dirname(output_path)
     if output_dir and not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    # Open video
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         raise ValueError(f"Cannot open video file: {video_path}")
 
-    # Get video properties
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS)
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    # Create video writer
-    fourcc = cv2.VideoWriter_fourcc(*codec)
-    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+    codecs_to_try = [codec, "mp4v", "XVID", "MJPG", "X264"]
+    out = None
 
-    # Process video
+    for current_codec in codecs_to_try:
+        try:
+            fourcc = cv2.VideoWriter_fourcc(*current_codec)
+            out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+
+            if out.isOpened():
+                logger.info(f"Using codec '{current_codec}' for output video")
+                break
+            else:
+                out.release()
+        except Exception as e:
+            logger.warning(f"Failed to initialize VideoWriter with codec '{current_codec}': {e}")
+
+    if out is None or not out.isOpened():
+        raise RuntimeError(f"Failed to create output video file: {output_path}. Tried codecs: {codecs_to_try}")
+
     processed_frames = 0
     current_frame = 0
     total_time = 0.0
 
-    # Create progress bar
     pbar = tqdm(total=frame_count, desc="Processing video")
 
     try:
@@ -110,9 +113,7 @@ def process_video(
             if not ret:
                 break
 
-            # Skip frames if frame_step > 1
             if current_frame % frame_step == 0:
-                # Process frame
                 t_start = time.time()
                 processed_frame = process_frame(frame, current_frame)
                 t_end = time.time()
@@ -120,11 +121,9 @@ def process_video(
                 processing_time = t_end - t_start
                 total_time += processing_time
 
-                # Write frame
                 out.write(processed_frame)
                 processed_frames += 1
 
-                # Show preview
                 if show_preview:
                     if preview_scale != 1.0:
                         preview_width = int(width * preview_scale)
@@ -145,21 +144,24 @@ def process_video(
 
     except KeyboardInterrupt:
         logger.info("Processing interrupted by user")
+    except Exception as e:
+        logger.error(f"Error during video processing: {e}")
+        raise
 
     finally:
-        # Release resources
         pbar.close()
         cap.release()
-        out.release()
+
+        if out is not None:
+            out.release()
+            logger.info(f"Video writer released for: {output_path}")
 
         if show_preview:
             cv2.destroyAllWindows()
 
-    # Calculate stats
     avg_time = total_time / processed_frames if processed_frames > 0 else 0
     processing_fps = 1.0 / avg_time if avg_time > 0 else 0
 
-    # Return statistics
     stats = {
         "input_path": video_path,
         "output_path": output_path,
@@ -168,6 +170,161 @@ def process_video(
         "total_processing_time": total_time,
         "avg_processing_time": avg_time,
         "processing_fps": processing_fps,
+    }
+
+    return stats
+
+
+def process_video_batch(
+    video_path: str,
+    output_path: str,
+    process_batch: Callable[[List[np.ndarray], List[int]], List[np.ndarray]],
+    batch_size: int = 4,
+    show_preview: bool = False,
+    frame_step: int = 1,
+    preview_scale: float = 1.0,
+    codec: str = "mp4v",
+) -> Dict[str, Any]:
+    """Process a video file using batch processing.
+
+    Args:
+        video_path: Path to input video
+        output_path: Path to output video
+        process_batch: Function to process batch of frames
+        batch_size: Number of frames to process at once
+        show_preview: Whether to show preview window
+        frame_step: Process every Nth frame
+        preview_scale: Scale factor for preview window
+        codec: FourCC codec code (default: "mp4v", alternatives: "avc1", "XVID")
+
+    Returns:
+        Dictionary with processing statistics
+    """
+    if not os.path.exists(video_path):
+        raise FileNotFoundError(f"Video file not found: {video_path}")
+
+    output_dir = os.path.dirname(output_path)
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        raise ValueError(f"Cannot open video file: {video_path}")
+
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+    codecs_to_try = [codec, "mp4v", "XVID", "MJPG", "X264"]
+    out = None
+
+    for current_codec in codecs_to_try:
+        try:
+            fourcc = cv2.VideoWriter_fourcc(*current_codec)
+            out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+
+            if out.isOpened():
+                logger.info(f"Using codec '{current_codec}' for output video")
+                break
+            else:
+                out.release()
+        except Exception as e:
+            logger.warning(f"Failed to initialize VideoWriter with codec '{current_codec}': {e}")
+
+    if out is None or not out.isOpened():
+        raise RuntimeError(f"Failed to create output video file: {output_path}. Tried codecs: {codecs_to_try}")
+
+    processed_frames = 0
+    current_frame = 0
+    total_time = 0.0
+
+    pbar = tqdm(total=frame_count, desc="Processing video in batches")
+
+    try:
+        while cap.isOpened():
+            batch_frames = []
+            batch_indices = []
+
+            # Collect frames for batch processing
+            while len(batch_frames) < batch_size and cap.isOpened():
+                ret, frame = cap.read()
+                if not ret:
+                    break
+
+                if current_frame % frame_step == 0:
+                    batch_frames.append(frame)
+                    batch_indices.append(current_frame)
+
+                current_frame += 1
+                pbar.update(1)
+
+            if not batch_frames:
+                break
+
+            # Process batch
+            t_start = time.time()
+            processed_frames_batch = process_batch(batch_frames, batch_indices)
+            t_end = time.time()
+
+            processing_time = t_end - t_start
+            total_time += processing_time
+
+            # Write processed frames
+            for i, processed_frame in enumerate(processed_frames_batch):
+                out.write(processed_frame)
+                processed_frames += 1
+
+                # Show preview (only the last frame)
+                if show_preview and i == len(processed_frames_batch) - 1:
+                    if preview_scale != 1.0:
+                        preview_width = int(width * preview_scale)
+                        preview_height = int(height * preview_scale)
+                        preview = cv2.resize(
+                            processed_frame,
+                            (preview_width, preview_height)
+                        )
+                    else:
+                        preview = processed_frame
+
+                    cv2.imshow("Preview", preview)
+                    if cv2.waitKey(1) & 0xFF == ord('q'):
+                        break
+
+    except KeyboardInterrupt:
+        logger.info("Processing interrupted by user")
+    except Exception as e:
+        logger.error(f"Error during batch video processing: {e}")
+        raise
+
+    finally:
+        pbar.close()
+        cap.release()
+
+        if out is not None:
+            out.release()
+            logger.info(f"Video writer released for: {output_path}")
+
+        if show_preview:
+            cv2.destroyAllWindows()
+
+    avg_time = total_time / processed_frames if processed_frames > 0 else 0
+    processing_fps = 1.0 / avg_time if avg_time > 0 else 0
+
+    batch_avg_time = total_time / (processed_frames / batch_size) if processed_frames > 0 else 0
+    batch_processing_fps = processed_frames / total_time if total_time > 0 else 0
+
+    stats = {
+        "input_path": video_path,
+        "output_path": output_path,
+        "frame_count": frame_count,
+        "processed_frames": processed_frames,
+        "batch_size": batch_size,
+        "total_processing_time": total_time,
+        "avg_processing_time": avg_time,
+        "avg_batch_processing_time": batch_avg_time,
+        "processing_fps": processing_fps,
+        "batch_processing_fps": batch_processing_fps,
     }
 
     return stats
