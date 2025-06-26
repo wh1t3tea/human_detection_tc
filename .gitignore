@@ -65,7 +65,6 @@ htmlcov/
 *.jpg
 *.png
 *.jpeg
-*.mp4
 
 # Metrics
 *.csv
