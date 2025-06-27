@@ -103,6 +103,8 @@ pip install -r requirements_train.txt
 
 ### Инференс
 
+Финальные веса модели доступны по ссылке в секции [Ссылки на датасеты и веса моделей](#ссылки-на-датасеты-и-веса-моделей). 
+
 Запуск инференса на видео с использованием модели ONNX:
 
 ```bash
@@ -233,6 +235,8 @@ python tools/export_onnx.py \
 - [Roboflow Human Dataset](https://universe.roboflow.com/roboflow-100/human-detection-serie) - кастомный датасет с разметкой людей
 
 ### Модели
+
+- [Финальная модель в моем решение YOLOv12n дообученная на 4 датасетах](https://drive.google.com/file/d/1vqjeipKZ2_SYzxGiBbe1AtidqprkqsQ7/view?usp=sharing) - дообученная модель на 4 датасетах
 
 - [YOLOv12n (базовая)](https://github.com/ultralytics/assets/releases/download/v8.1.0/yolov12n.pt) - базовая модель YOLOv12n
 - [YOLOv12s (базовая)](https://github.com/ultralytics/assets/releases/download/v8.1.0/yolov12s.pt) - базовая модель YOLOv12s
