@@ -1,8 +1,3 @@
-#!/usr/bin/env python3
-"""
-Configuration utilities for loading and parsing YAML configs.
-"""
-
 import os
 from typing import Dict, Any, Optional
 

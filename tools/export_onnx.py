@@ -2,6 +2,7 @@ import argparse
 import os
 from pathlib import Path
 import shutil
+import logging
 
 from ultralytics import YOLO
 
@@ -16,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 def export_to_onnx(
     model_name,
+    model_path=None,
     opset=12,
     simplify=True,
     dynamic=True,
@@ -42,9 +44,9 @@ def export_to_onnx(
 
     torch_path = os.path.join(MODELS_DIR, model_name, "torch", f"{model_name}.pt")
     onnx_path = os.path.join(MODELS_DIR, model_name, "onnx", f"{model_name}.onnx")
-    source_onnx_path = os.path.join(MODELS_DIR, model_name, "torch", f"{model_name}.onnx")
+    source_onnx_path = model_path.replace(".pt", ".onnx") if model_path else os.path.join(MODELS_DIR, model_name, "torch", f"{model_name}.onnx")
 
-    model = YOLO(torch_path)
+    model = YOLO(model_path if model_path else torch_path)
 
     export_options = {
         'format': 'onnx',
@@ -63,8 +65,10 @@ def export_to_onnx(
 
 def main():
     parser = argparse.ArgumentParser(description='Export YOLO PyTorch model to ONNX format')
-    parser.add_argument('--model', type=str, required=True,
+    parser.add_argument('--model_path', default=None, type=str,
                         help='Path to the PyTorch model (.pt) or a model name (e.g., "yolov8n", "yolov8s")')
+    parser.add_argument('--model_name', type=str, required=True,
+                        help='Name of the model')
     parser.add_argument('--opset', type=int, default=12, help='ONNX opset version')
     parser.add_argument('--simplify', action='store_true', default=True, help='Simplify ONNX model')
     parser.add_argument('--dynamic', action='store_true', default=True, help='Use dynamic axes')
@@ -74,7 +78,8 @@ def main():
     args = parser.parse_args()
 
     export_to_onnx(
-        model_name=args.model,
+        model_name=args.model_name,
+        model_path=args.model_path,
         opset=args.opset,
         simplify=args.simplify,
         dynamic=args.dynamic,

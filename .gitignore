@@ -60,3 +60,15 @@ $RECYCLE.BIN/
 .coverage
 htmlcov/
 .pytest_cache/
+
+# Images/Videos
+*.jpg
+*.png
+*.jpeg
+
+# Metrics
+*.csv
+
+# Archives/Data
+*.zip
+/data/

@@ -1,8 +1,8 @@
 img_size: 640
 device: "cpu"
 
-conf_threshold: 0.25
-iou_threshold: 0.45
+conf_threshold: 0.5
+iou_threshold: 0.8
 
 class_names:
   0: "person"

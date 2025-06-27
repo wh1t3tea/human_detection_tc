@@ -1,8 +1,3 @@
-#!/usr/bin/env python3
-"""
-YOLO object detector implementation using ONNX Runtime.
-"""
-
 import os
 import logging
 from typing import Dict, List, Tuple, Optional, Union, Any
@@ -12,7 +7,6 @@ import numpy as np
 import onnxruntime as ort
 
 
-# Configure module logger
 logger = logging.getLogger(__name__)
 
 
@@ -22,11 +16,11 @@ class YOLODetector:
     def __init__(
         self,
         model_path: str,
-        conf_threshold: float = 0.25,
-        iou_threshold: float = 0.45,
+        conf_threshold: float = 0.5,
+        iou_threshold: float = 0.7,
         device: str = "cpu",
         img_size: int = 640,
-        class_filter: Optional[List[int]] = None,
+        batch_size: int = 1
     ):
         """Initialize YOLO detector.
 
@@ -36,23 +30,20 @@ class YOLODetector:
             iou_threshold: IoU threshold for NMS
             device: Device to run inference on ("cpu" or "cuda")
             img_size: Input image size
-            class_filter: List of class IDs to detect (None = all classes)
+            batch_size: Batch size for inference
         """
         self.model_path = model_path
         self.conf_threshold = conf_threshold
         self.iou_threshold = iou_threshold
         self.img_size = img_size
-        self.class_filter = class_filter
+        self.batch_size = batch_size
 
-        # Create ONNX Runtime session
         self.session = self._create_session(device)
 
-        # Get model metadata
         self.input_name = self.session.get_inputs()[0].name
         self.input_shape = self.session.get_inputs()[0].shape
         self.output_names = [o.name for o in self.session.get_outputs()]
 
-        # Initialize class names with placeholder (need to be provided or loaded)
         self.class_names = {}
 
     def _create_session(self, device: str) -> ort.InferenceSession:
@@ -87,135 +78,176 @@ class YOLODetector:
         """
         self.class_names = class_names
 
-    def preprocess(self, image: np.ndarray) -> np.ndarray:
-        """Preprocess image for inference.
+    def preprocess(self, images: Union[np.ndarray, List[np.ndarray]]) -> np.ndarray:
+        """Preprocess image(s) for inference, matching ultralytics preprocessing.
 
         Args:
-            image: Input image (BGR)
+            images: Single image (BGR) or list of images
 
         Returns:
-            Preprocessed image ready for model input
+            Preprocessed image(s) ready for model input
         """
-        # Resize
-        input_height, input_width = self.img_size, self.img_size
-        img = cv2.resize(image, (input_width, input_height))
+        if isinstance(images, np.ndarray) and images.ndim == 3:
+            images = [images]
 
-        # Convert BGR to RGB
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        batch = []
 
-        # Normalize [0-255] to [0-1]
-        img = img.astype(np.float32) / 255.0
+        for image in images:
+            original_height, original_width = image.shape[:2]
+            input_height, input_width = self.img_size, self.img_size
 
-        # Channel first (HWC -> NCHW)
-        img = img.transpose(2, 0, 1)
+            scale = min(input_width / original_width, input_height / original_height)
+            new_width = int(original_width * scale)
+            new_height = int(original_height * scale)
 
-        # Add batch dimension
-        img = np.expand_dims(img, axis=0)
+            pad_x = (input_width - new_width) // 2
+            pad_y = (input_height - new_height) // 2
 
-        return img
+            resized = cv2.resize(image, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
+
+            img = np.full((input_height, input_width, 3), 114, dtype=np.uint8)
+            img[pad_y:pad_y + new_height, pad_x:pad_x + new_width, :] = resized
+
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            img = img.astype(np.float32) / 255.0
+
+            img = img.transpose(2, 0, 1)
+
+            batch.append(img)
+
+        return np.array(batch)
 
     def postprocess(
         self,
         outputs: Dict[str, np.ndarray],
-        orig_shape: Tuple[int, int],
-    ) -> Dict[str, Any]:
+        orig_shapes: List[Tuple[int, int]],
+    ) -> List[Dict[str, Any]]:
         """Process model outputs to detection format.
 
         Args:
             outputs: Model outputs
-            orig_shape: Original image shape (height, width)
+            orig_shapes: List of original image shapes (height, width)
 
         Returns:
-            Dictionary with detection results
+            List of dictionaries with detection results
         """
-        # Determine the format of outputs based on the number of dimensions
-        # and shape of the output tensors
-        if len(self.output_names) == 1:
-            # YOLOv8 format - single output, shape: (1, n_boxes, n_classes+5)
-            predictions = outputs[self.output_names[0]]
-            return self._process_yolov8_output(predictions, orig_shape)
-        else:
-            # Multiple outputs - likely YOLOv5/v7 format
-            return self._process_yolov5_output(outputs, orig_shape)
+        predictions = outputs[self.output_names[0]]
+        batch_size = predictions.shape[0]
 
-    def _process_yolov8_output(
+        results = []
+        for i in range(batch_size):
+            result = self._process_yolov12_output(
+                predictions[i:i+1], orig_shapes[i]
+            )
+            results.append(result)
+
+        return results
+
+    def _process_yolov12_output(
         self,
         predictions: np.ndarray,
         orig_shape: Tuple[int, int],
     ) -> Dict[str, Any]:
-        """Process YOLOv8 outputs.
+        """Process YOLOv12 outputs.
 
         Args:
-            predictions: Model predictions
+            predictions: Model predictions with shape (1, 84, 8000)
             orig_shape: Original image shape (height, width)
 
         Returns:
             Dictionary with detection results
         """
-        # Get image dimensions
         orig_height, orig_width = orig_shape
         input_height, input_width = self.img_size, self.img_size
 
-        # Extract boxes, scores, and classes
+        scale = min(input_width / orig_width, input_height / orig_height)
+        new_width = int(orig_width * scale)
+        new_height = int(orig_height * scale)
+        pad_x = (input_width - new_width) // 2
+        pad_y = (input_height - new_height) // 2
+
         boxes = []
         scores = []
         class_ids = []
 
-        # YOLOv8 output shape: (1, num_boxes, num_classes+5)
-        for i in range(predictions.shape[1]):
-            # Get score and class
-            class_scores = predictions[0, i, 4:]
-            class_id = np.argmax(class_scores)
-            score = class_scores[class_id] * predictions[0, i, 4]
+        logger.info(f"Processing YOLOv12 output with shape {predictions.shape}")
 
-            # Filter by confidence threshold
-            if score < self.conf_threshold:
-                continue
+        transposed_preds = predictions.transpose(0, 2, 1)
 
-            # Filter by class if specified
-            if self.class_filter is not None and class_id not in self.class_filter:
-                continue
+        box_coords = transposed_preds[0, :, :4]
+        obj_conf = transposed_preds[0, :, 4]
 
-            # Get bounding box coordinates
-            x, y, w, h = predictions[0, i, :4]
+        cls_scores = transposed_preds[0, :, 4:]
 
-            # Convert to corner coordinates and scale to original image
-            x1 = (x - w/2) / input_width * orig_width
-            y1 = (y - h/2) / input_height * orig_height
-            x2 = (x + w/2) / input_width * orig_width
-            y2 = (y + h/2) / input_height * orig_height
+        max_cls_scores = np.max(cls_scores, axis=1)
+        max_cls_indices = np.argmax(cls_scores, axis=1)
 
-            # Add to results
-            boxes.append([x1, y1, x2, y2])
-            scores.append(float(score))
-            class_ids.append(int(class_id))
+        final_scores = obj_conf
 
-        # Apply NMS
+        keep_idxs = final_scores > self.conf_threshold
+
+        if np.any(keep_idxs):
+            filtered_boxes = box_coords[keep_idxs]
+            filtered_scores = final_scores[keep_idxs]
+            filtered_classes = max_cls_indices[keep_idxs]
+
+            for i in range(len(filtered_boxes)):
+                cx, cy, w, h = filtered_boxes[i]
+
+                cx_adj = cx - pad_x
+                cy_adj = cy - pad_y
+
+                if cx_adj < 0 or cx_adj > new_width or cy_adj < 0 or cy_adj > new_height:
+                    continue
+
+                cx_orig = cx_adj / scale
+                cy_orig = cy_adj / scale
+                w_orig = w / scale
+                h_orig = h / scale
+
+                x1 = cx_orig - w_orig/2
+                y1 = cy_orig - h_orig/2
+                x2 = cx_orig + w_orig/2
+                y2 = cy_orig + h_orig/2
+
+                x1 = max(0, min(x1, orig_width))
+                y1 = max(0, min(y1, orig_height))
+                x2 = max(0, min(x2, orig_width))
+                y2 = max(0, min(y2, orig_height))
+
+                if x2 - x1 < 5 or y2 - y1 < 5:
+                    continue
+
+                if filtered_classes[i] == 0:
+                    boxes.append([float(x1), float(y1), float(x2), float(y2)])
+                    scores.append(float(filtered_scores[i]))
+                    class_ids.append(int(filtered_classes[i]))
+
         indices = cv2.dnn.NMSBoxes(
             boxes, scores, self.conf_threshold, self.iou_threshold
-        )
+        ) if boxes else []
 
-        # Prepare results
         result_boxes = []
         result_scores = []
         result_class_ids = []
         result_class_names = []
 
-        for i in indices:
-            # Handle both OpenCV 4.5+ (returns a flat array) and older versions
-            idx = i if isinstance(i, int) else i[0]
+        if len(indices) > 0:
+            if isinstance(indices, np.ndarray) and indices.ndim == 1:
+                selected_indices = indices
+            else:
+                selected_indices = [i[0] if isinstance(i, (list, np.ndarray)) else i for i in indices]
 
-            result_boxes.append(boxes[idx])
-            result_scores.append(scores[idx])
-            result_class_ids.append(class_ids[idx])
+            for idx in selected_indices:
+                result_boxes.append(boxes[idx])
+                result_scores.append(scores[idx])
+                result_class_ids.append(class_ids[idx])
 
-            # Get class name if available
-            class_name = self.class_names.get(class_ids[idx], f"Class {class_ids[idx]}")
-            result_class_names.append(class_name)
+                class_name = self.class_names.get(class_ids[idx], f"Class {class_ids[idx]}")
+                result_class_names.append(class_name)
 
-        # Create detection dictionary
         detections = {
-            "boxes": np.array(result_boxes),
+            "boxes": np.array(result_boxes) if result_boxes else np.empty((0, 4)),
             "scores": np.array(result_scores),
             "classes": np.array(result_class_ids),
             "class_names": result_class_names,
@@ -224,29 +256,8 @@ class YOLODetector:
 
         return detections
 
-    def _process_yolov5_output(
-        self,
-        outputs: Dict[str, np.ndarray],
-        orig_shape: Tuple[int, int],
-    ) -> Dict[str, Any]:
-        """Process YOLOv5/v7 outputs.
-
-        Args:
-            outputs: Model outputs
-            orig_shape: Original image shape (height, width)
-
-        Returns:
-            Dictionary with detection results
-        """
-        # This implementation depends on the exact output format
-        # For YOLOv5/v7, typically one output is the boxes and another is scores
-        # This is a placeholder - would need to be adjusted based on the model
-        raise NotImplementedError(
-            "YOLOv5/v7 format not implemented. Please use YOLOv8 ONNX models."
-        )
-
     def detect(self, image: np.ndarray) -> Dict[str, Any]:
-        """Run detection on an image.
+        """Run detection on a single image.
 
         Args:
             image: Input image (BGR)
@@ -254,21 +265,48 @@ class YOLODetector:
         Returns:
             Dictionary with detection results
         """
-        # Get original image shape
-        orig_shape = image.shape[:2]  # (height, width)
-
-        # Preprocess image
+        orig_shape = image.shape[:2]
         input_tensor = self.preprocess(image)
 
-        # Run inference
         outputs = self.session.run(
             self.output_names, {self.input_name: input_tensor}
         )
 
-        # Convert outputs to dictionary
         output_dict = {name: outputs[i] for i, name in enumerate(self.output_names)}
 
-        # Postprocess outputs
-        detections = self.postprocess(output_dict, orig_shape)
+        detections = self.postprocess(output_dict, [orig_shape])[0]
 
         return detections
+
+    def detect_batch(self, images: List[np.ndarray], batch_size: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Run detection on a batch of images.
+
+        Args:
+            images: List of input images (BGR)
+            batch_size: Batch size override (default: use class batch_size)
+
+        Returns:
+            List of dictionaries with detection results
+        """
+        if batch_size is None:
+            batch_size = self.batch_size
+
+        results = []
+        orig_shapes = [img.shape[:2] for img in images]
+
+        for i in range(0, len(images), batch_size):
+            batch_images = images[i:i+batch_size]
+            batch_shapes = orig_shapes[i:i+batch_size]
+
+            input_tensor = self.preprocess(batch_images)
+
+            outputs = self.session.run(
+                self.output_names, {self.input_name: input_tensor}
+            )
+
+            output_dict = {name: outputs[i] for i, name in enumerate(self.output_names)}
+
+            batch_results = self.postprocess(output_dict, batch_shapes)
+            results.extend(batch_results)
+
+        return results
