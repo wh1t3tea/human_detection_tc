@@ -66,8 +66,8 @@
 
 ```bash
 # Клонировать репозиторий
-git clone https://github.com/yourusername/detection_tc.git
-cd detection_tc
+git clone https://github.com/yourusername/human_detection_tc.git
+cd human_detection_tc
 
 # Установить FFmpeg (необходим для обработки видео)
 # Ubuntu/Debian
@@ -91,8 +91,8 @@ pip install -r requirements_inference.txt
 
 ```bash
 # Клонировать репозиторий
-git clone https://github.com/yourusername/detection_tc.git
-cd detection_tc
+git clone https://github.com/yourusername/human_detection_tc.git
+cd human_detection_tc
 
 
 # Установить зависимости для обучения
@@ -209,9 +209,8 @@ python tools/export_onnx.py \
 
 ### Демонстрационное видео
 
-[![Демонстрация детекции людей](assets/final_video.mp4)]
-
-*Примечание: Замените VIDEO_ID на ID вашего YouTube видео*
+Демонстрация детекции людей
+<video src="assets/final_video.mp4" controls width="700"></video>
 
 ## Файлы конфигурации
 
@@ -224,3 +223,22 @@ python tools/export_onnx.py \
 ### visual_config.yaml
 
 Содержит настройки визуализации, такие как цвета для отображения рамок, размеры шрифтов и т.д.
+
+## Ссылки на датасеты и веса моделей
+
+### Датасеты
+
+- [CrowdHuman](https://www.crowdhuman.org/) - датасет с плотными сценами с большим количеством людей
+- [TinyPerson](https://github.com/ucas-vg/TinyBenchmark) - датасет с мелкими объектами людей, вид сверху
+- [CityPersons](https://github.com/cvgroup-njust/CityPersons) - датасет с пешеходами в городской среде
+- [Roboflow Human Dataset](https://universe.roboflow.com/roboflow-100/human-detection-serie) - кастомный датасет с разметкой людей
+
+### Модели
+
+- [YOLOv12n (базовая)](https://github.com/ultralytics/assets/releases/download/v8.1.0/yolov12n.pt) - базовая модель YOLOv12n
+- [YOLOv12s (базовая)](https://github.com/ultralytics/assets/releases/download/v8.1.0/yolov12s.pt) - базовая модель YOLOv12s
+- [YOLOv12n дообученная на CrowdHuman](https://drive.google.com/file/d/1XSfAJnYSn0oyzXUayNbQcxl6ny_vn6IL/view?usp=sharing) - дообученная модель на CrowdHuman
+- [YOLOv12n дообученная на 4 датасетах](https://drive.google.com/file/d/1vqjeipKZ2_SYzxGiBbe1AtidqprkqsQ7/view?usp=sharing) - дообученная модель на 4 датасетах
+- [YOLOv12s дообученная на CrowdHuman](https://drive.google.com/file/d/13anuoJ3IgVWI7rqVqAOgOUq7HWXv1Lju/view?usp=sharing) - дообученная модель YOLOv12s
+
+Все модели доступны в формате ONNX (.onnx) для инференса.
