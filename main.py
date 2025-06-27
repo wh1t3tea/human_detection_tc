@@ -40,7 +40,7 @@ def parse_args():
 
     parser.add_argument("--conf", type=float, default=0.5,
                       help="Confidence threshold")
-    parser.add_argument("--iou", type=float, default=0.7,
+    parser.add_argument("--iou", type=float, default=0.8,
                       help="IoU threshold")
     parser.add_argument("--device", type=str, default="cpu",
                       help="Device for inference: 'cpu' or 'cuda'")
