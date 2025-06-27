@@ -1,8 +1,3 @@
-#!/usr/bin/env python3
-"""
-YOLO object detector implementation using ONNX Runtime.
-"""
-
 import os
 import logging
 from typing import Dict, List, Tuple, Optional, Union, Any

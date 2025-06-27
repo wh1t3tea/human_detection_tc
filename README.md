@@ -69,6 +69,20 @@
 git clone https://github.com/yourusername/detection_tc.git
 cd detection_tc
 
+# Установить FFmpeg (необходим для обработки видео)
+# Ubuntu/Debian
+sudo apt update && sudo apt install ffmpeg -y
+
+# CentOS/RHEL
+# sudo yum install epel-release -y
+# sudo yum install ffmpeg ffmpeg-devel -y
+
+# macOS (с Homebrew)
+# brew install ffmpeg
+
+# Windows (с Chocolatey)
+# choco install ffmpeg
+
 # Установить зависимости для инференса
 pip install -r requirements_inference.txt
 ```
@@ -79,6 +93,7 @@ pip install -r requirements_inference.txt
 # Клонировать репозиторий
 git clone https://github.com/yourusername/detection_tc.git
 cd detection_tc
+
 
 # Установить зависимости для обучения
 pip install -r requirements_train.txt
@@ -96,8 +111,9 @@ python main.py \
     --output output.mp4 \
     --model weights/yolo12n/onnx/model.onnx \
     --conf 0.5 \
+    --iou 0.8 \
     --device cpu \
-    --batch_size 4
+    --batch_size 16
 ```
 
 #### Аргументы командной строки
@@ -208,22 +224,3 @@ python tools/export_onnx.py \
 ### visual_config.yaml
 
 Содержит настройки визуализации, такие как цвета для отображения рамок, размеры шрифтов и т.д.
-
-## Ссылки на датасеты и веса моделей
-
-### Датасеты
-
-- [CrowdHuman](https://www.crowdhuman.org/) - Датасет для детекции людей в условиях высокой плотности
-- [TinyPerson](https://github.com/ucas-vg/TinyBenchmark) - Датасет с изображениями людей на большом расстоянии
-- [CityPerson](https://github.com/cvgroup-njust/CityPersons) - Датасет для детекции пешеходов в городских условиях
-- [Human Dataset (Roboflow)](https://universe.roboflow.com/like-gxvlg/human-pp8s8) - Кастомный датасет с Roboflow
-
-### Модели
-
-- [YOLOv12n (базовая)](https://github.com/ultralytics/ultralytics/releases/download/v8.0.0/yolov12n.pt) - Базовая модель nano, не обученная на специфических данных
-- [YOLOv12s (базовая)](https://github.com/ultralytics/ultralytics/releases/download/v8.0.0/yolov12s.pt) - Базовая модель small, не обученная на специфических данных
-- [YOLOv12n (fine-tuned на CrowdHuman)](https://drive.google.com/file/d/1XSfAJnYSn0oyzXUayNbQcxl6ny_vn6IL/view?usp=sharing) - Модель nano, дообученная на CrowdHuman
-- [YOLOv12n (fine-tuned на 4 датасетах)](https://drive.google.com/file/d/1vqjeipKZ2_SYzxGiBbe1AtidqprkqsQ7/view?usp=sharing) - Финальная модель nano, обученная на всех 4 датасетах
-- [YOLOv12s (fine-tuned на CrowdHuman)](https://drive.google.com/file/d/13anuoJ3IgVWI7rqVqAOgOUq7HWXv1Lju/view?usp=sharing) - Модель small, дообученная на CrowdHuman
-
-- [YOLOv12n (4 датасета, ONNX)](https://drive.google.com/file/d/1vqjeipKZ2_SYzxGiBbe1AtidqprkqsQ7/view?usp=sharing) - Финальная модель в формате ONNX

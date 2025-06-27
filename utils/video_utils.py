@@ -1,6 +1,7 @@
 import os
 import time
 import logging
+import subprocess
 from typing import Callable, Dict, Any, Tuple, List, Optional
 
 import cv2
@@ -73,6 +74,10 @@ def process_video(
     if output_dir and not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
+    # Always create a temporary file first
+    temp_output_path = output_path + ".temp.mp4"
+    actual_output_path = output_path
+
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         raise ValueError(f"Cannot open video file: {video_path}")
@@ -88,10 +93,10 @@ def process_video(
     for current_codec in codecs_to_try:
         try:
             fourcc = cv2.VideoWriter_fourcc(*current_codec)
-            out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+            out = cv2.VideoWriter(temp_output_path, fourcc, fps, (width, height))
 
             if out.isOpened():
-                logger.info(f"Using codec '{current_codec}' for output video")
+                logger.info(f"Using codec '{current_codec}' for temporary output video")
                 break
             else:
                 out.release()
@@ -99,7 +104,7 @@ def process_video(
             logger.warning(f"Failed to initialize VideoWriter with codec '{current_codec}': {e}")
 
     if out is None or not out.isOpened():
-        raise RuntimeError(f"Failed to create output video file: {output_path}. Tried codecs: {codecs_to_try}")
+        raise RuntimeError(f"Failed to create output video file: {temp_output_path}. Tried codecs: {codecs_to_try}")
 
     processed_frames = 0
     current_frame = 0
@@ -154,10 +159,55 @@ def process_video(
 
         if out is not None:
             out.release()
-            logger.info(f"Video writer released for: {output_path}")
+            logger.info(f"Video writer released for: {temp_output_path}")
 
         if show_preview:
             cv2.destroyAllWindows()
+
+    # Post-process with ffmpeg to maintain quality
+    if os.path.exists(temp_output_path):
+        try:
+            # Get the file size of the original video to calculate target bitrate
+            original_size = os.path.getsize(video_path)
+            video_duration = get_video_properties(video_path)["duration"]
+            target_bitrate = int((original_size * 8) / video_duration)  # in bits per second
+
+            # Ensure a minimum bitrate for quality
+            target_bitrate = max(target_bitrate, 1000000)  # minimum 1 Mbps
+
+            # Convert to kbps for ffmpeg
+            bitrate_str = f"{target_bitrate//1000}k"
+            logger.info(f"Target bitrate: {bitrate_str} (based on original video size)")
+
+            cmd = [
+                "ffmpeg", "-y",
+                "-i", temp_output_path,
+                "-c:v", "libx264",
+                "-b:v", bitrate_str,
+                "-preset", "medium",
+                actual_output_path
+            ]
+
+            logger.info("Re-encoding video with ffmpeg to match original quality...")
+            subprocess.run(cmd, check=True)
+            logger.info(f"FFmpeg re-encoding completed: {actual_output_path}")
+
+            # Delete temporary file
+            os.remove(temp_output_path)
+            logger.info(f"Temporary file removed: {temp_output_path}")
+
+        except Exception as e:
+            logger.error(f"Failed to re-encode with ffmpeg: {e}")
+            logger.warning("Using basic output without size optimization")
+
+            # If ffmpeg failed, rename the temp file to the actual output
+            if os.path.exists(temp_output_path):
+                if os.path.exists(actual_output_path):
+                    os.remove(actual_output_path)
+                os.rename(temp_output_path, actual_output_path)
+
+    # Ensure output_path is set to the actual output path for stats
+    output_path = actual_output_path
 
     avg_time = total_time / processed_frames if processed_frames > 0 else 0
     processing_fps = 1.0 / avg_time if avg_time > 0 else 0
@@ -207,6 +257,10 @@ def process_video_batch(
     if output_dir and not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
+    # Always create a temporary file first
+    temp_output_path = output_path + ".temp.mp4"
+    actual_output_path = output_path
+
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         raise ValueError(f"Cannot open video file: {video_path}")
@@ -222,10 +276,10 @@ def process_video_batch(
     for current_codec in codecs_to_try:
         try:
             fourcc = cv2.VideoWriter_fourcc(*current_codec)
-            out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+            out = cv2.VideoWriter(temp_output_path, fourcc, fps, (width, height))
 
             if out.isOpened():
-                logger.info(f"Using codec '{current_codec}' for output video")
+                logger.info(f"Using codec '{current_codec}' for temporary output video")
                 break
             else:
                 out.release()
@@ -233,7 +287,7 @@ def process_video_batch(
             logger.warning(f"Failed to initialize VideoWriter with codec '{current_codec}': {e}")
 
     if out is None or not out.isOpened():
-        raise RuntimeError(f"Failed to create output video file: {output_path}. Tried codecs: {codecs_to_try}")
+        raise RuntimeError(f"Failed to create output video file: {temp_output_path}. Tried codecs: {codecs_to_try}")
 
     processed_frames = 0
     current_frame = 0
@@ -246,7 +300,6 @@ def process_video_batch(
             batch_frames = []
             batch_indices = []
 
-            # Collect frames for batch processing
             while len(batch_frames) < batch_size and cap.isOpened():
                 ret, frame = cap.read()
                 if not ret:
@@ -262,7 +315,6 @@ def process_video_batch(
             if not batch_frames:
                 break
 
-            # Process batch
             t_start = time.time()
             processed_frames_batch = process_batch(batch_frames, batch_indices)
             t_end = time.time()
@@ -270,12 +322,10 @@ def process_video_batch(
             processing_time = t_end - t_start
             total_time += processing_time
 
-            # Write processed frames
             for i, processed_frame in enumerate(processed_frames_batch):
                 out.write(processed_frame)
                 processed_frames += 1
 
-                # Show preview (only the last frame)
                 if show_preview and i == len(processed_frames_batch) - 1:
                     if preview_scale != 1.0:
                         preview_width = int(width * preview_scale)
@@ -303,10 +353,55 @@ def process_video_batch(
 
         if out is not None:
             out.release()
-            logger.info(f"Video writer released for: {output_path}")
+            logger.info(f"Video writer released for: {temp_output_path}")
 
         if show_preview:
             cv2.destroyAllWindows()
+
+    # Post-process with ffmpeg to maintain quality
+    if os.path.exists(temp_output_path):
+        try:
+            # Get the file size of the original video to calculate target bitrate
+            original_size = os.path.getsize(video_path)
+            video_duration = get_video_properties(video_path)["duration"]
+            target_bitrate = int((original_size * 8) / video_duration)  # in bits per second
+
+            # Ensure a minimum bitrate for quality
+            target_bitrate = max(target_bitrate, 1000000)  # minimum 1 Mbps
+
+            # Convert to kbps for ffmpeg
+            bitrate_str = f"{target_bitrate//1000}k"
+            logger.info(f"Target bitrate: {bitrate_str} (based on original video size)")
+
+            cmd = [
+                "ffmpeg", "-y",
+                "-i", temp_output_path,
+                "-c:v", "libx264",
+                "-b:v", bitrate_str,
+                "-preset", "medium",
+                actual_output_path
+            ]
+
+            logger.info("Re-encoding video with ffmpeg to match original quality...")
+            subprocess.run(cmd, check=True)
+            logger.info(f"FFmpeg re-encoding completed: {actual_output_path}")
+
+            # Delete temporary file
+            os.remove(temp_output_path)
+            logger.info(f"Temporary file removed: {temp_output_path}")
+
+        except Exception as e:
+            logger.error(f"Failed to re-encode with ffmpeg: {e}")
+            logger.warning("Using basic output without size optimization")
+
+            # If ffmpeg failed, rename the temp file to the actual output
+            if os.path.exists(temp_output_path):
+                if os.path.exists(actual_output_path):
+                    os.remove(actual_output_path)
+                os.rename(temp_output_path, actual_output_path)
+
+    # Ensure output_path is set to the actual output path for stats
+    output_path = actual_output_path
 
     avg_time = total_time / processed_frames if processed_frames > 0 else 0
     processing_fps = 1.0 / avg_time if avg_time > 0 else 0
@@ -354,21 +449,17 @@ def extract_frames(
     if not os.path.exists(video_path):
         raise FileNotFoundError(f"Video file not found: {video_path}")
 
-    # Create output directory
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    # Open video
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         raise ValueError(f"Cannot open video file: {video_path}")
 
-    # Process video
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     current_frame = 0
     extracted_frames = 0
 
-    # Create progress bar
     pbar = tqdm(total=frame_count, desc="Extracting frames")
 
     try:
@@ -377,12 +468,10 @@ def extract_frames(
             if not ret:
                 break
 
-            # Extract frame if it's a multiple of frame_step
             if current_frame % frame_step == 0:
                 if max_frames is not None and extracted_frames >= max_frames:
                     break
 
-                # Save frame
                 if image_format.lower() == "jpg":
                     filename = os.path.join(output_dir, f"frame_{current_frame:06d}.jpg")
                     cv2.imwrite(filename, frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
