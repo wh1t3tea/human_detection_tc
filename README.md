@@ -209,8 +209,7 @@ python tools/export_onnx.py \
 
 ### Демонстрационное видео
 
-Демонстрация детекции людей
-<video src="assets/final_video.mp4" controls width="700"></video>
+[Демонстрация детекции людей](assets/final_video.mp4)
 
 ## Файлы конфигурации
 
