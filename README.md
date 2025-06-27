@@ -209,7 +209,7 @@ python tools/export_onnx.py \
 
 ### Демонстрационное видео
 
-[![Демонстрация детекции людей]](assets/YOLO12n_4_datasets_finetune_50_epochs.mp4)
+[![Демонстрация детекции людей](assets/final_video.mp4)]
 
 *Примечание: Замените VIDEO_ID на ID вашего YouTube видео*
 
